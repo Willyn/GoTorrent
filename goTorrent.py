@@ -218,22 +218,7 @@ class Printer(object):
         msg_temp = "%s %s FINALIZADO" % (peer,torrent_hash)
         #self.torrents[torrent_hash][peer]['pbar'].set_description(msg_temp)
         #self.torrents[torrent_hash][peer]['pbar'].close()
-        global time_ini
-        
-        time_act = time.time()
-        time_dif = time_act-time_ini
-        
-        file_temp = "tiempos%speers.txt"  % (total)
-        outfile = open(file_temp, 'a')
 
-        c = str(time_dif) + ','
-        outfile.write(c)
-        outfile.close()
-        
-        #outfile = open('finalizados.txt', 'a') 
-        #c = peer + ' Terminado.\n'
-        #outfile.write(c)
-        #outfile.close()
 
 if __name__ == "__main__":
     set_context()
@@ -244,11 +229,11 @@ if __name__ == "__main__":
     global total
     total=10
     time_ini = time.time()
-    if len(sys.argv) < 2 or not sys.argv[1].isdigit() or int(sys.argv[1]) < 1 or int(sys.argv[1]) > 3:
-        print "Falta un parametro o este es incorrecto (Parametros:  1 Push  2 Pull 3 Pull&Push)"
-        print "Ejemplo: ",sys.argv[0]," 1"
-        print "Ejemplo: ",sys.argv[0]," 2"
-        print "Ejemplo: ",sys.argv[0]," 3"
+    if len(sys.argv) < 3 or not sys.argv[1].isdigit() or not sys.argv[2].isdigit() or int(sys.argv[1]) < 1 or int(sys.argv[1]) > 3:
+        print "Falta un parametro o este es incorrecto (Parametros:  [1 Push  2 Pull 3 Pull&Push] [num_peers])"
+        print "Ejemplo: ",sys.argv[0]," 1 10"
+        print "Ejemplo: ",sys.argv[0]," 2 10"
+        print "Ejemplo: ",sys.argv[0]," 3 20"
         shutdown()
     else:
         if int(sys.argv[1]) == 1:
@@ -256,12 +241,6 @@ if __name__ == "__main__":
             pull = False
             print "Version Push, arrancando..."
             type_exe = "1"
-            file_temp = "tiempos%speers.txt"  % (total)
-            outfile = open(file_temp, 'a')
-            for i in range(total+1):
-                c = str(i) + ','
-                outfile.write(c)
-            outfile.close()
             
             
         elif int(sys.argv[1]) == 2:
@@ -275,13 +254,7 @@ if __name__ == "__main__":
             print "Version Pull&Push, arrancando..."
             type_exe = "3"
             
-        file_temp = "tiempos%speers.txt"  % (total)
-        outfile = open(file_temp, 'a')
-
-        c = '\n' + type_exe+ ','
-        outfile.write(c)
-        outfile.close()
-        
+        total = int(sys.argv[2])
         h = create_host()
         tracker = h.spawn('tracker', Tracker)
         printer = h.spawn('printer',Printer)
