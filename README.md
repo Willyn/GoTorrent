@@ -1,9 +1,9 @@
 # GoTorrent
 Desarrollado por 
-Adrian Gutierrez Rodriguez
+Adrian Gutierrez Rodriguez y 
 Gerard Gonzalez Serramia
 
-GoTorrent es un servicio que pretende emular el comportamiento de Torrent mediante el uso de protocols Gossip, implementando 3 metodos es distribucion de la información, 
+GoTorrent es un servicio que pretende emular el comportamiento de Torrent mediante el uso de protocols Gossip, implementando 3 metodos de distribucion de la información, 
 que son Pull, Push y una combinacion de Pull y Push.
 
 Para el funcionamiento del programa es necesario instalar las librerias de pyactor mediante los siguientes comandos:
