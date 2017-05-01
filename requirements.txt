@@ -4,3 +4,4 @@ pep8
 gevent
 pyactor
 plotly
+tqdm
