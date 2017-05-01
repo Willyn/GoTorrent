@@ -11,6 +11,7 @@ pull = False
 class Tracker(object):
     _tell = ['setProxys','announce','publish','publish_all','active_interval','stop_interval','garbage_cleanner','setComplet']
     _ask = ['get_peers'] 
+    _ref = ['announce']
     
     def __init__(self):
         self.torrents = {}
@@ -22,9 +23,10 @@ class Tracker(object):
         timestamp = time.time()
         if not self.torrents.has_key(torrent_hash):
             self.torrents[torrent_hash]={}
-        self.torrents[torrent_hash][peer] = {}
-        self.torrents[torrent_hash][peer]['time']=timestamp
-        self.torrents[torrent_hash][peer]['seed']=False
+        self.torrents[torrent_hash][peer.id] = {}
+        self.torrents[torrent_hash][peer.id]['ref']=peer
+        self.torrents[torrent_hash][peer.id]['time']=timestamp
+        self.torrents[torrent_hash][peer.id]['seed']=False
 
 
     def stop_interval(self):
@@ -42,7 +44,7 @@ class Tracker(object):
                  if (timestamp >= (temp['time'] +10) ):
                      self.torrents[clave].pop(peer)
                      msg_temp = "Eliminado peer %s de hash %s" % (peer,clave)
-                     self.printer.msg(self.id,msg_temp)
+                     #self.printer.msg(self.id,msg_temp)
                      #print "Eliminando a peer",peer,"de hash",clave
     
     def get_peers(self,torrent_hash,type_push):
@@ -53,18 +55,24 @@ class Tracker(object):
     
         if len(self.torrents[torrent_hash]) < 2:
             num_peers=1
-        elif len(self.torrents[torrent_hash]) < 3:
-            num_peers=2
         else:
-            num_peers=3
-
+            num_peers = 2
+            
         if type_push == True:
             peers_incompletos = {k: v for k, v in self.torrents[torrent_hash].items() if v['seed'] == False }
             if len(peers_incompletos) == 0: 
                 return None
-            return random.sample(peers_incompletos.keys(),num_peers)
+            temp =random.sample(peers_incompletos.keys(),num_peers)
+            lista = []
+            for peer in temp:
+                lista.append(self.torrents[torrent_hash][peer]['ref'])
+            return lista
         else:
-            return random.sample(self.torrents[torrent_hash].keys(),num_peers)
+            temp =random.sample(self.torrents[torrent_hash].keys(),num_peers)
+            lista = []
+            for peer in temp:
+                lista.append(self.torrents[torrent_hash][peer]['ref'])
+            return lista
             
     
     def setComplet(self,torrent_hash,peer):
@@ -72,7 +80,7 @@ class Tracker(object):
 
         
 class Peer(object):
-    _tell = ['announce','setProxys','tracker_announce','announce_stop','setPeers','checkComplet', 'setContent','setInit', 'startPush', 'push', 'makeSeed','startPull', 'pull']
+    _tell = ['announce','setProxys','tracker_announce','announce_stop','setPeers','checkComplet', 'setContent','setInit', 'startPush', 'push', 'makeSeed','startPull', 'pull','pullpush','startPullPush']
     _ask = ['getChunk']
     _ref = ['setProxys']
 
@@ -94,7 +102,7 @@ class Peer(object):
         self.printer = printer
         
     def tracker_announce(self, torrent_hash):
-        self.tracker.announce(torrent_hash,self.id)
+        self.tracker.announce(torrent_hash,self)
        
     def announce_stop(self, torrent_hash):
         if self.torrents.has_key(torrent_hash):
@@ -110,21 +118,28 @@ class Peer(object):
             if self.checkComplet(torrent_hash):
                 #print "El paquete recibido es:",self.id,self.torrents[torrent_hash]['content']
                 self.printer.close(torrent_hash,self.id,self.torrents[torrent_hash]['content'])
-                if pull == True:
-                    self.torrents[torrent_hash]['intervalPull'].set()
             
     def startPush(self, torrent_hash):
+        self.torrents[torrent_hash]['interval2']=interval(self.host, 1, self.proxy, "push", torrent_hash, None)
         self.printer.create(torrent_hash,self.id,self.torrents[torrent_hash]['size'])
-        self.torrents[torrent_hash]['intervalPush']=interval(self.host, 2, self.proxy, "push", torrent_hash)
-        
+
     def startPull(self, torrent_hash):
+        self.torrents[torrent_hash]['interval2']=interval(self.host, 1, self.proxy, "pull", torrent_hash, None)
         self.printer.create(torrent_hash,self.id,self.torrents[torrent_hash]['size'])
-        self.torrents[torrent_hash]['intervalPull']=interval(self.host, 2, self.proxy, "pull", torrent_hash)
-        
+   
+    def startPullPush(self, torrent_hash):
+        self.torrents[torrent_hash]['interval2']=interval(self.host, 1, self.proxy, "pullpush", torrent_hash)    
+        self.printer.create(torrent_hash,self.id,self.torrents[torrent_hash]['size'])
+
     def checkComplet(self, torrent_hash): # Nos dice si un torrent_hash ya esta completo
         return (len(self.torrents[torrent_hash]['content'])==self.torrents[torrent_hash]['size']) #TRUE si se tiene el seed completo, FALSE si no lo esta
         
-    def push(self, torrent_hash):
+    def push(self, torrent_hash,peers):
+        if peers == None:
+            try:
+                peers = self.tracker.get_peers(torrent_hash,False)
+            except TimeoutError:
+                None
         #print "PUSH",self.torrents[torrent_hash]['recived'],self.id,torrent_hash
         # Comprobamos si ya tenemos alguna parWte para poderla enviar.
         if len(self.torrents[torrent_hash]['content']) > 0:
@@ -134,47 +149,50 @@ class Peer(object):
             chunk_data = self.torrents[torrent_hash]['content'][chunk_id]
             #Cogemos 2 peers al azar
             #Enviamos el chunk a todos los peers seleccionados
-            try:
-                peers = self.tracker.get_peers(torrent_hash,False)
-                sleep(0.1)
-                if not peers is None:
-                    for p in peers:
-                        if(p != self.id):
-                            peerTemp = self.host.lookup(p)
-                            try:
-                                sleep(0.1)
-                                if (not peerTemp.checkComplet(torrent_hash)):
-                                #peerTemp = self.host.lookup(p)
-                                #sleep(0.5)
-                                    peerTemp.setContent(torrent_hash, chunk_id, chunk_data)
-                            except TimeoutError:
+            if not peers is None:
+                for p in peers:
+                    if(p != self):
+                        try:
+                            if (not p.checkComplet(torrent_hash)):
+                                p.setContent(torrent_hash, chunk_id, chunk_data)
+                        except TimeoutError:
                                 None
-            except TimeoutError:
-                None
 
                         
                         
-    def pull(self, torrent_hash):
-        if not self.checkComplet(torrent_hash):
+    def pull(self, torrent_hash,peers):
+        if peers == None:
             try:
-                #Solictamos a tracker que nos de peer para solicitar ese chunk
-                #Cogemos 2 peers al azar
-                peers = self.tracker.get_peers(torrent_hash,False) 
-                #Les pedimos aquellos chunkgs que no tenemos (indices en chunksNeed) y si lo tienen, lo eliminamos de la lista de chunksNeed
-                if not peers is None:
-                    for p in peers: 
-                        if p != self.id:
-                            peerTemp = self.host.lookup(p)
-                            try:
-                                if len(self.torrents[torrent_hash]['chunksNeed']) > 0:
-                                    chunk_id = self.torrents[torrent_hash]['chunksNeed'][0]
-                                    chunk_data = peerTemp.getChunk(torrent_hash, chunk_id)
-                                    if chunk_data != None:
-                                        self.setContent(torrent_hash, chunk_id, chunk_data)
-                            except TimeoutError:
-                                None
+                peers = self.tracker.get_peers(torrent_hash,False)
             except TimeoutError:
                 None
+        if not self.checkComplet(torrent_hash):
+            #Solictamos a tracker que nos de peer para solicitar ese chunk
+            #Les pedimos aquellos chunks que no tenemos (indices en chunksNeed) y si lo tienen, lo eliminamos de la lista de chunksNeed
+            if not peers is None:
+                for p in peers: 
+                    if p != self:
+                        try:
+                            if len(self.torrents[torrent_hash]['chunksNeed']) > 0:
+                                chunk_id = self.torrents[torrent_hash]['chunksNeed'][0]
+                                chunk_data = p.getChunk(torrent_hash, chunk_id)
+                                if chunk_data != None:
+                                    self.setContent(torrent_hash, chunk_id, chunk_data)
+                        except TimeoutError:
+                            None
+
+    
+    def pullpush(self, torrent_hash):
+        try:
+            peers = self.tracker.get_peers(torrent_hash,False) 
+            if not self.checkComplet(torrent_hash):
+                self.pull(torrent_hash,peers)
+            self.push(torrent_hash,peers)
+        except TimeoutError:
+                None
+        
+        
+    
     
     def getChunk(self, torrent_hash, chunk_id):
         if (self.torrents[torrent_hash]['content'].has_key(chunk_id)):
@@ -218,6 +236,17 @@ class Printer(object):
         msg_temp = "%s %s FINALIZADO" % (peer,torrent_hash)
         #self.torrents[torrent_hash][peer]['pbar'].set_description(msg_temp)
         #self.torrents[torrent_hash][peer]['pbar'].close()
+        global time_ini
+        
+        time_act = time.time()
+        time_dif = time_act-time_ini
+        
+        file_temp = "tiempos%speers.txt"  % (total)
+        outfile = open(file_temp, 'a')
+
+        c = str(time_dif) + ','
+        outfile.write(c)
+        outfile.close()
 
 
 if __name__ == "__main__":
@@ -227,7 +256,6 @@ if __name__ == "__main__":
     global time_ini
     global type_exe
     global total
-    total=10
     time_ini = time.time()
     if len(sys.argv) < 3 or not sys.argv[1].isdigit() or not sys.argv[2].isdigit() or int(sys.argv[1]) < 1 or int(sys.argv[1]) > 3:
         print "Falta un parametro o este es incorrecto (Parametros:  [1 Push  2 Pull 3 Pull&Push] [num_peers])"
@@ -236,25 +264,41 @@ if __name__ == "__main__":
         print "Ejemplo: ",sys.argv[0]," 3 20"
         shutdown()
     else:
+        total = int(sys.argv[2])
         if int(sys.argv[1]) == 1:
             push = True
             pull = False
-            print "Version Push, arrancando..."
+            print "Version Push con",total,"peers arrancando..."
             type_exe = "1"
-            
+            file_temp = "tiempos%speers.txt"  % (total)
+            outfile = open(file_temp, 'a')
+            for i in range(total+1):
+                c = str(i) + ','
+                outfile.write(c)
+            outfile.close()
             
         elif int(sys.argv[1]) == 2:
             pull = True
             push = False
-            print "Version Pull, arrancando..."
+            print "Version Pull con",total,"peers arrancando..."
             type_exe = "2"
         else:
             push = True
             pull = True
-            print "Version Pull&Push, arrancando..."
+            print "Version Pull&Push con",total,"peers arrancando..."
             type_exe = "3"
+
             
-        total = int(sys.argv[2])
+        
+        
+        file_temp = "tiempos%speers.txt"  % (total)
+        outfile = open(file_temp, 'a')
+
+        c = '\n' + type_exe+ ','
+        outfile.write(c)
+        outfile.close()
+        
+        
         h = create_host()
         tracker = h.spawn('tracker', Tracker)
         printer = h.spawn('printer',Printer)
@@ -263,18 +307,15 @@ if __name__ == "__main__":
         
         sleep(1)
         
-        torrent_hash1 = "TWD_S1_E1"
-        torrent_hash2 = "TWD_S1_E2"
-        mensaje1 = "Mensaje 1."
-        mensaje2 = "Mensaje 2, paquete completo! TWD_S1_E2."
-        
+        torrent_hash1 = "goTorrent"
+        mensaje1 = "goTorrent"
+
         seed = h.spawn('Seed', Peer)
         seed.setProxys(tracker,printer);
         seed.announce(torrent_hash1,len(mensaje1))
-        if pull == True:
-            seed.startPull(torrent_hash1)
         if push == True:
             seed.startPush(torrent_hash1)
+            
         seed.makeSeed(torrent_hash1, mensaje1)
         
         peers = {}
@@ -284,12 +325,15 @@ if __name__ == "__main__":
             peers[i] = h.spawn(peer, Peer)
             peers[i].setProxys(tracker,printer)
             peers[i].announce(torrent_hash1, len(mensaje1))
-            if pull == True:
+            if pull == True and push == False:
                 peers[i].startPull(torrent_hash1)
-            if push == True:
+            elif push == True and pull == False:
                 peers[i].startPush(torrent_hash1)
+            else:
+                peers[i].startPullPush(torrent_hash1)
+                
         
-        while contador < total+1:
+        while contador < total +1:
             sleep(1)
     
         shutdown()
