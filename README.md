@@ -26,3 +26,6 @@ Ejemplo: python goTorrent.py  2 10
 
 Ejemplo: python goTorrent.py  3 20
 
+gotorrent
+
+Coverage Status codecov Code Health Build Status
